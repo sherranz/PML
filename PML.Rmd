@@ -1,0 +1,128 @@
+---
+title: "Practical Machine Learning"
+author: "sherranz"
+date: "18/03/2015"
+output: html_document
+---
+
+##Overview
+
+We need to predict the manner in which the users did the exercise. We have a large sample set (19622 obs and 160 variables) and we need to predict the "classe" variable in another 20 samples. The plan is:
+
+1. Split data
+2. Exploratory data analysis
+3. Cross validation
+4. Fit the model and error estimation
+5. Apply model to validate data
+
+Go ahead!
+
+##1. Load and split data
+
+
+First of all, I load and split data. I fix the seed for a reproducible analysis. We have a test data file, then I take 60% for training and 40% for validation.
+
+```{r results='hide', message=FALSE}
+require(caret) 
+require(rpart)
+
+localfile<-"pml-training.csv"
+if (!file.exists(localfile)){
+  file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  download.file(url = file, destfile = localfile , method = "curl")
+}
+localtestfile<-"pml-testing.csv"
+if (!file.exists(localtestfile)){
+  file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(url = file, destfile = localtestfile , method = "curl")
+}
+
+data<-read.table(localfile, sep = ",", header = T, na.strings = "?")
+datatest<-read.table(localtestfile, sep = ",", header = T, na.strings = "?")
+
+set.seed(220470)
+inTrain <- createDataPartition(y=data$classe, p=0.6, list=FALSE)
+training <- data[inTrain,]
+validate <- data[-inTrain,]
+```
+
+##2. Exploratory data analysis
+###2.1. Near Zero Vars
+
+The nearZeroVar function show a hundred of near zero vars. I don't want to fight with them, so I remove them
+
+```{r}
+nzvs<-nearZeroVar(training, saveMetrics = T)
+sum(nzvs$nzv)
+training<-training[,-which(nzvs$nzv)]
+validate<-validate[,-which(nzvs$nzv)]
+```
+
+###2.2. Outliers
+There are some ways to find outliers, I did it painting some plots. I found a couple of outliers, none of them in the selected features, so I decided to forget them.
+```{r}
+featurePlot(training[,50:52], training[,59], plot="pairs")#outlier training[5373,]
+```
+
+###2.3. Feature selection
+
+After a bunch of plots, I paid my attention on raw_timestamp_part_1. First, data on this variable can be sliced by user_name, so I did it. Then, plotting the data from a single user by raw_timestamp_part_1 shown a fair visual correlation between "classe" and raw_timestamp_part_1
+```{r}
+cu1<-training[2]=="adelmo"
+training_u1<-training[cu1,]
+featurePlot(training_u1[,3:5], training_u1[,59], plot = "pairs")
+```
+
+I've showed the data from "adelmo", another user_name give us similar results. A little deeper exploration show us there is a total match for our outcome (classe) and the variables raw_timestamp_part_1 and raw_timestamp_part_2. The course project page says "You may use any of the other variables to predict with", so I choose them for my model. There's no need to add the variable user_name, because data is sliced by it.
+
+##3. Cross Validation
+I prepared a bunch of splits for the training data, in order to validate the model.
+
+```{r}
+splits<- matrix(nrow = 20, ncol = 9423)
+for (i in 1:20){
+  forValidate <- createDataPartition(y=training$classe, p=0.8, list=FALSE)
+  splits[i,]<-forValidate
+}
+```
+
+##4. Fit the model and error estimation
+A decision tree must works fine in this case, it's a non linear problem and data can be separated on chunks to predict the classe variable. I use cross validation split.
+
+```{r cache=TRUE}
+features<-c(3,4,59)#raw_timestamp_part_1, raw_timestamp_part_2 and classe
+totalOK<-0
+for (i in 1:20){
+  training_tr<-training[splits[i,], features]  
+  training_va<-training[-splits[i,], features]  
+  model<-train(classe~., data=training_tr, method="rpart")
+  prediction<-predict(model, newdata = training_va)
+  prOK<-sum(prediction==training_va$classe)
+  prKO<-sum(prediction!=training_va$classe)
+  print(paste("CV", i, ", OK=", prOK, ", KO=", prKO, ", accuracy=", prOK/dim(training_va)[1], sep = ""))
+  totalOK<-totalOK + prOK
+}
+```
+
+```{r}
+  accMean<-totalOK/20/dim(training_va)[1]
+  print(paste("Accuracy mean:", accMean))
+```
+
+THE ESTIMATED OUT OF SAMPLE ERROR is a bit more than 99%. This is a fair case and we could get 100%, in fact the model is using only one predictor, raw_timestamp_part_1. The final model is 
+
+```{r cache=TRUE}
+final_model<-train(classe~., data=training[,features], method="rpart")
+print(final_model)
+```
+
+##5. Apply model to validate data
+
+Now it's time to apply the model to our validate data
+```{r}
+  final_prediction<-predict(final_model, newdata = validate)
+  final_prOK<-sum(final_prediction==validate$classe)
+  final_prKO<-sum(final_prediction!=validate$classe)
+  print(paste("Final prediction, OK=", final_prOK, ", KO=", final_prKO, ", accuracy=", final_prOK/dim(validate)[1], sep = ""))
+```
+
