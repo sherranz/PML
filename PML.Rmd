@@ -11,13 +11,8 @@ We need to predict the manner in which the users did the exercise. We have a lar
 
 1. Split data
 2. Exploratory data analysis
-<<<<<<< HEAD
 3. Cross validation and error estimation
 4. Fit the model 
-=======
-3. Cross validation
-4. Fit the model and error estimation
->>>>>>> 96da16823d6d0752ffe48da73c6123369e9f4433
 5. Apply model to validate data
 
 Go ahead!
@@ -54,7 +49,6 @@ validate <- data[-inTrain,]
 ##2. Exploratory data analysis
 ###2.1. Near Zero Vars
 
-<<<<<<< HEAD
 The nearZeroVar function show a hundred of near zero vars. I don't want to fight with them, so I remove them. I remove columns 1 to 7, they aren't interesting now.
 
 ```{r cache=TRUE}
@@ -78,26 +72,10 @@ outlier<-which(training$magnet_dumbbell_y < (-3000))
 outlier
 training<-training[-outlier,]
 featurePlot(training[,37:39], training[,53], plot="pairs")
-=======
-The nearZeroVar function show a hundred of near zero vars. I don't want to fight with them, so I remove them
-
-```{r}
-nzvs<-nearZeroVar(training, saveMetrics = T)
-sum(nzvs$nzv)
-training<-training[,-which(nzvs$nzv)]
-validate<-validate[,-which(nzvs$nzv)]
-```
-
-###2.2. Outliers
-There are some ways to find outliers, I did it painting some plots. I found a couple of outliers, none of them in the selected features, so I decided to forget them.
-```{r}
-featurePlot(training[,50:52], training[,59], plot="pairs")#outlier training[5373,]
->>>>>>> 96da16823d6d0752ffe48da73c6123369e9f4433
 ```
 
 ###2.3. Feature selection
 
-<<<<<<< HEAD
 Running principal components analysis show as we can get more than 95% of total variation with only 9 variables, so this is my selection
 ```{r}
 pca<-prcomp(training[,-53])
@@ -111,29 +89,11 @@ I prepared a bunch of splits for the training data, in order to validate the mod
 
 ```{r}
 splits<- matrix(nrow = 20, ncol = 9421)
-=======
-After a bunch of plots, I paid my attention on raw_timestamp_part_1. First, data on this variable can be sliced by user_name, so I did it. Then, plotting the data from a single user by raw_timestamp_part_1 shown a fair visual correlation between "classe" and raw_timestamp_part_1
-```{r}
-cu1<-training[2]=="adelmo"
-training_u1<-training[cu1,]
-featurePlot(training_u1[,3:5], training_u1[,59], plot = "pairs")
-```
-
-I've showed the data from "adelmo", another user_name give us similar results. A little deeper exploration show us there is a total match for our outcome (classe) and the variables raw_timestamp_part_1 and raw_timestamp_part_2. The course project page says "You may use any of the other variables to predict with", so I choose them for my model. There's no need to add the variable user_name, because data is sliced by it.
-
-##3. Cross Validation
-I prepared a bunch of splits for the training data, in order to validate the model.
-
-```{r}
-splits<- matrix(nrow = 20, ncol = 9423)
->>>>>>> 96da16823d6d0752ffe48da73c6123369e9f4433
 for (i in 1:20){
   forValidate <- createDataPartition(y=training$classe, p=0.8, list=FALSE)
   splits[i,]<-forValidate
 }
 ```
-
-<<<<<<< HEAD
 
 A random forest must works fine in this case. I use cross validation split.
 
@@ -149,22 +109,6 @@ for (i in 1:20){
   prOK<-sum(prediction==trainCLS_va)
   prKO<-sum(prediction!=trainCLS_va)
   print(paste(date(), " CV", i, ", OK=", prOK, ", KO=", prKO, ", accuracy=", prOK/length(trainCLS_va), sep = ""))
-=======
-##4. Fit the model and error estimation
-A decision tree must works fine in this case, it's a non linear problem and data can be separated on chunks to predict the classe variable. I use cross validation split.
-
-```{r cache=TRUE}
-features<-c(3,4,59)#raw_timestamp_part_1, raw_timestamp_part_2 and classe
-totalOK<-0
-for (i in 1:20){
-  training_tr<-training[splits[i,], features]  
-  training_va<-training[-splits[i,], features]  
-  model<-train(classe~., data=training_tr, method="rpart")
-  prediction<-predict(model, newdata = training_va)
-  prOK<-sum(prediction==training_va$classe)
-  prKO<-sum(prediction!=training_va$classe)
-  print(paste("CV", i, ", OK=", prOK, ", KO=", prKO, ", accuracy=", prOK/dim(training_va)[1], sep = ""))
->>>>>>> 96da16823d6d0752ffe48da73c6123369e9f4433
   totalOK<-totalOK + prOK
 }
 ```
@@ -174,10 +118,7 @@ for (i in 1:20){
   print(paste("Accuracy mean:", accMean))
 ```
 
-<<<<<<< HEAD
 ##4. Fit the model 
-=======
->>>>>>> 96da16823d6d0752ffe48da73c6123369e9f4433
 THE ESTIMATED OUT OF SAMPLE ERROR is a bit more than 99%. This is a fair case and we could get 100%, in fact the model is using only one predictor, raw_timestamp_part_1. The final model is 
 
 ```{r cache=TRUE}
