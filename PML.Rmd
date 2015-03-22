@@ -1,7 +1,7 @@
 ---
 title: "Practical Machine Learning"
 author: "sherranz"
-date: "18/03/2015"
+date: "22/03/2015"
 output: html_document
 ---
 
@@ -12,8 +12,9 @@ We need to predict the manner in which the users did the exercise. We have a lar
 1. Split data
 2. Exploratory data analysis
 3. Cross validation and error estimation
-4. Fit the model 
-5. Apply model to validate data
+4. Estimated out of sample error
+5. Fit the model 
+6. Apply model to validate data
 
 Go ahead!
 
@@ -23,27 +24,28 @@ Go ahead!
 First of all, I load and split data. I fix the seed for a reproducible analysis. We have a test data file, then I take 60% for training and 40% for validation.
 
 ```{r results='hide', message=FALSE}
-require(caret) 
-require(rpart)
-
-localfile<-"pml-training.csv"
-if (!file.exists(localfile)){
-  file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
-  download.file(url = file, destfile = localfile , method = "curl")
-}
-localtestfile<-"pml-testing.csv"
-if (!file.exists(localtestfile)){
-  file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
-  download.file(url = file, destfile = localtestfile , method = "curl")
-}
-
-data<-read.table(localfile, sep = ",", header = T, na.strings = "?")
-datatest<-read.table(localtestfile, sep = ",", header = T, na.strings = "?")
-
-set.seed(220470)
-inTrain <- createDataPartition(y=data$classe, p=0.6, list=FALSE)
-training <- data[inTrain,]
-validate <- data[-inTrain,]
+  require(caret) 
+  require(rpart)
+  require(randomForest)
+  
+  localfile<-"pml-training.csv"
+  if (!file.exists(localfile)){
+    file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    download.file(url = file, destfile = localfile , method = "curl")
+  }
+  localtestfile<-"pml-testing.csv"
+  if (!file.exists(localtestfile)){
+    file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(url = file, destfile = localtestfile , method = "curl")
+  }
+  
+  data<-read.table(localfile, sep = ",", header = T, na.strings = "?")
+  datatest<-read.table(localtestfile, sep = ",", header = T, na.strings = "?")
+  
+  set.seed(220470)
+  inTrain <- createDataPartition(y=data$classe, p=0.6, list=FALSE)
+  training <- data[inTrain,]
+  validate <- data[-inTrain,]
 ```
 
 ##2. Exploratory data analysis
@@ -51,88 +53,95 @@ validate <- data[-inTrain,]
 
 The nearZeroVar function show a hundred of near zero vars. I don't want to fight with them, so I remove them. I remove columns 1 to 7, they aren't interesting now.
 
-```{r cache=TRUE}
-nzvs<-nearZeroVar(training, saveMetrics = T)
-sum(nzvs$nzv)
-training<-training[,-c(1:7, which(nzvs$nzv))]
-validate<-validate[,-c(1:7, which(nzvs$nzv))]
+```{r}
+  nzvs<-nearZeroVar(training, saveMetrics = T)
+  sum(nzvs$nzv)
+  training<-training[,-c(1:7, which(nzvs$nzv))]
+  validate<-validate[,-c(1:7, which(nzvs$nzv))]
 ```
 
 ###2.2. Outliers
 There are some ways to find outliers, I did it painting some plots. I found a couple of outliers. I removed them.
 ```{r}
-featurePlot(training[,44:46], training[,53], plot="pairs")
-outlier<-which(training$gyros_forearm_y>250)
-outlier
-training<-training[-outlier,]
-featurePlot(training[,44:46], training[,53], plot="pairs")
-
-featurePlot(training[,37:39], training[,53], plot="pairs")
-outlier<-which(training$magnet_dumbbell_y < (-3000))
-outlier
-training<-training[-outlier,]
-featurePlot(training[,37:39], training[,53], plot="pairs")
+  featurePlot(training[,44:46], training[,53], plot="pairs")
+  outlier<-which(training$gyros_forearm_y>250)
+  outlier
+  training<-training[-outlier,]
+  featurePlot(training[,44:46], training[,53], plot="pairs")
+  
+  featurePlot(training[,37:39], training[,53], plot="pairs")
+  outlier<-which(training$magnet_dumbbell_y < (-3000))
+  outlier
+  training<-training[-outlier,]
+  featurePlot(training[,37:39], training[,53], plot="pairs")
 ```
 
 ###2.3. Feature selection
 
 Running principal components analysis show as we can get more than 95% of total variation with only 9 variables, so this is my selection
 ```{r}
-pca<-prcomp(training[,-53])
-summary(pca)
-preProc<-preProcess(training[,-53], method="pca", pcaComp = 9)
-trainPCA<-predict(preProc, training[,-53])
+  pca<-prcomp(training[,-53])
+  summary(pca)
+  preProc<-preProcess(training[,-53], method="pca", pcaComp = 9)
+  trainPCA<-predict(preProc, training[,-53])
+  trainPCA<-cbind(trainPCA, classe=training[,53])
 ```
 
 ##3. Cross Validation and error estimation
 I prepared a bunch of splits for the training data, in order to validate the model.
 
 ```{r}
-splits<- matrix(nrow = 20, ncol = 9421)
-for (i in 1:20){
-  forValidate <- createDataPartition(y=training$classe, p=0.8, list=FALSE)
-  splits[i,]<-forValidate
-}
+  splits<- matrix(nrow = 20, ncol = 9421)
+  for (i in 1:20){
+    forValidate <- createDataPartition(y=training$classe, p=0.8, list=FALSE)
+    splits[i,]<-forValidate
+  }
 ```
 
 A random forest must works fine in this case. I use cross validation split.
 
 ```{r cache=TRUE}
-totalOK<-0
-for (i in 1:20){
-  trainPCA_tr<-trainPCA[splits[i,], ]  
-  trainPCA_va<-trainPCA[-splits[i,], ]  
-  trainCLS_tr<-training[splits[i,], 53]  
-  trainCLS_va<-training[-splits[i,], 53]  
-  model<-train(trainCLS_tr~., data=trainPCA_tr, method="rf", prox=TRUE)
-  prediction<-predict(model, newdata = trainPCA_va)
-  prOK<-sum(prediction==trainCLS_va)
-  prKO<-sum(prediction!=trainCLS_va)
-  print(paste(date(), " CV", i, ", OK=", prOK, ", KO=", prKO, ", accuracy=", prOK/length(trainCLS_va), sep = ""))
-  totalOK<-totalOK + prOK
-}
+  totalOK<-0
+  for (i in 1:20){
+    trainPCA_tr<-trainPCA[splits[i,], ]
+    trainPCA_va<-trainPCA[-splits[i,], ]  
+    model<-train(classe~., data=trainPCA_tr, method="rf", PROX=TRUE)
+    prediction<-predict(model, newdata = trainPCA_va)
+    prOK<-sum(prediction==trainPCA_va$classe)
+    prKO<-sum(prediction!=trainPCA_va$classe)
+    print(paste(date(), " CV", i, ", OK=", prOK, ", KO=", prKO, ", accuracy=", prOK/dim(trainPCA_va)[1], sep = ""))
+    totalOK<-totalOK + prOK
+  }
 ```
 
 ```{r}
-  accMean<-totalOK/20/dim(training_va)[1]
+  accMean<-totalOK/20/dim(trainPCA_va)[1]
   print(paste("Accuracy mean:", accMean))
 ```
 
-##4. Fit the model 
-THE ESTIMATED OUT OF SAMPLE ERROR is a bit more than 99%. This is a fair case and we could get 100%, in fact the model is using only one predictor, raw_timestamp_part_1. The final model is 
+##4. Estimated out of sample error 
+THE ESTIMATED OUT OF SAMPLE ERROR is about  7.6% (`r 1-accMean`). 
+
+##5. Fit the model 
+The final model is 
 
 ```{r cache=TRUE}
-final_model<-train(classe~., data=training[,features], method="rpart")
-print(final_model)
+  final_model<-train(classe~., data=trainPCA, method="rf", prox=TRUE)
+  print(final_model)
 ```
 
-##5. Apply model to validate data
+##6. Apply model to validate data
 
 Now it's time to apply the model to our validate data
 ```{r}
-  final_prediction<-predict(final_model, newdata = validate)
-  final_prOK<-sum(final_prediction==validate$classe)
-  final_prKO<-sum(final_prediction!=validate$classe)
-  print(paste("Final prediction, OK=", final_prOK, ", KO=", final_prKO, ", accuracy=", final_prOK/dim(validate)[1], sep = ""))
+  validatePCA<-predict(preProc, validate[,-53])
+  validatePCA<-cbind(validatePCA, classe=validate[,53])
+  final_prediction<-predict(final_model, newdata = validatePCA)
+  final_prOK<-sum(final_prediction==validatePCA$classe)
+  final_prKO<-sum(final_prediction!=validatePCA$classe)
+  final_acc<-final_prOK/dim(validatePCA)[1]
+  print(paste("Final prediction, OK=", final_prOK, ", KO=", final_prKO, ", accuracy=", final_acc, sep = ""))
 ```
+
+Real out of sample error is `r 1-final_acc`.
 
